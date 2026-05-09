@@ -1,0 +1,8 @@
+.env
+node_modules/
+results/
+debug/
+.browser-profile/
+.debug-profile*/
+.test-profile/
+*.log

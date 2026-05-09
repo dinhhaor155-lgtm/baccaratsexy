@@ -1,0 +1,12 @@
+{
+  "name": "sexy-baccarat-road-watcher",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "start": "node scripts/auto-sexy-baccarat.mjs"
+  },
+  "dependencies": {
+    "playwright": "^1.53.0"
+  }
+}
