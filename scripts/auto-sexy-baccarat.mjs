@@ -83,7 +83,10 @@ async function fillFirst(page, selectors, value, timeout = 3000) {
 
 async function login(page) {
   console.log("Opening login page...");
-  await page.goto(required("LOGIN_URL"), { waitUntil: "domcontentloaded" });
+  await page.goto(required("LOGIN_URL"), { waitUntil: "domcontentloaded", timeout: 60000 });
+  await page.waitForLoadState("networkidle", { timeout: 15000 }).catch(() => {});
+  await page.waitForTimeout(3000);
+  console.log(`Login page loaded: ${await page.title().catch(() => "")} ${page.url()}`);
   await screenshot(page, "01-login-page");
 
   if (await isLoggedIn(page)) {
@@ -116,11 +119,15 @@ async function login(page) {
     "input[type='password']"
   ], required("PASSWORD"));
 
-  if (!usernameSelector || !passwordSelector) {
-    await ensureLoginForm(page);
-  }
+  let retryUsernameSelector = usernameSelector;
+  let retryPasswordSelector = passwordSelector;
 
-  const retryUsernameSelector = usernameSelector || await fillFirst(page, [
+  for (let attempt = 1; attempt <= 3 && (!retryUsernameSelector || !retryPasswordSelector); attempt++) {
+    console.log(`Login form retry ${attempt}/3...`);
+    await ensureLoginForm(page);
+    await page.waitForTimeout(1500);
+
+    retryUsernameSelector ||= await fillFirst(page, [
     process.env.USERNAME_SELECTOR,
     "input[name='username']",
     "input[name='account']",
@@ -132,9 +139,9 @@ async function login(page) {
     "input[placeholder*='Username' i]",
     "input[placeholder*='Account' i]",
     "input[type='text']"
-  ], required("USERNAME"));
+    ], required("USERNAME"));
 
-  const retryPasswordSelector = passwordSelector || await fillFirst(page, [
+    retryPasswordSelector ||= await fillFirst(page, [
     process.env.PASSWORD_SELECTOR,
     "input[name='password']",
     "input[name='passwd']",
@@ -143,10 +150,12 @@ async function login(page) {
     "input[placeholder*='Mật khẩu' i]",
     "input[placeholder*='Password' i]",
     "input[type='password']"
-  ], required("PASSWORD"));
+    ], required("PASSWORD"));
+  }
 
   if (!retryUsernameSelector || !retryPasswordSelector) {
     await screenshot(page, "02-login-fields-not-found");
+    await saveDebugHtml(page, "02-login-fields-not-found");
     throw new Error("Could not find login fields. Set USERNAME_SELECTOR and PASSWORD_SELECTOR in .env.");
   }
 
@@ -186,6 +195,8 @@ async function ensureLoginForm(page) {
   if (hasPassword) return;
 
   await closePromos(page);
+  await page.goto(required("LOGIN_URL"), { waitUntil: "domcontentloaded", timeout: 30000 }).catch(() => {});
+  await page.waitForTimeout(1000);
   await clickFirst(page, [
     "button:has-text('Đăng nhập')",
     "a:has-text('Đăng nhập')",
@@ -269,6 +280,16 @@ async function screenshot(page, name) {
     path: path.join(DEBUG_DIR, `${name}.png`),
     fullPage: false
   }).catch(() => {});
+}
+
+async function saveDebugHtml(page, name) {
+  await fs.mkdir(DEBUG_DIR, { recursive: true });
+  const html = await page.content().catch(error => `<pre>${escapeHtml(error.message)}</pre>`);
+  const text = await page.locator("body").innerText({ timeout: 3000 }).catch(() => "");
+  await fs.writeFile(
+    path.join(DEBUG_DIR, `${name}.html`),
+    `<!-- url: ${page.url()} -->\n<!-- title: ${await page.title().catch(() => "")} -->\n<pre>${escapeHtml(text.slice(0, 5000))}</pre>\n${html}`
+  ).catch(() => {});
 }
 
 async function hasHallApi(page) {
@@ -399,6 +420,16 @@ function startServer() {
       return;
     }
 
+    if (url.pathname === "/debug") {
+      serveDebugIndex(res);
+      return;
+    }
+
+    if (url.pathname.startsWith("/debug/")) {
+      serveDebugFile(url.pathname.slice("/debug/".length), res);
+      return;
+    }
+
     res.writeHead(200, { "content-type": "text/html; charset=utf-8" });
     res.end(renderHtml(latestSnapshot));
   });
@@ -408,6 +439,35 @@ function startServer() {
   });
 
   return server;
+}
+
+async function serveDebugIndex(res) {
+  try {
+    const files = (await fs.readdir(DEBUG_DIR))
+      .filter(name => /\.(png|html|txt)$/i.test(name))
+      .sort();
+    res.writeHead(200, { "content-type": "text/html; charset=utf-8" });
+    res.end(`<!doctype html><html><body><h1>Debug</h1><ul>${
+      files.map(name => `<li><a href="/debug/${encodeURIComponent(name)}">${escapeHtml(name)}</a></li>`).join("")
+    }</ul></body></html>`);
+  } catch {
+    res.writeHead(200, { "content-type": "text/html; charset=utf-8" });
+    res.end("<p>No debug files yet.</p>");
+  }
+}
+
+async function serveDebugFile(name, res) {
+  const safeName = path.basename(decodeURIComponent(name));
+  const filePath = path.join(DEBUG_DIR, safeName);
+  try {
+    const data = await fs.readFile(filePath);
+    const type = safeName.endsWith(".png") ? "image/png" : "text/html; charset=utf-8";
+    res.writeHead(200, { "content-type": type, "cache-control": "no-store" });
+    res.end(data);
+  } catch {
+    res.writeHead(404, { "content-type": "text/plain; charset=utf-8" });
+    res.end("Not found");
+  }
 }
 
 function renderHtml(snapshot) {
