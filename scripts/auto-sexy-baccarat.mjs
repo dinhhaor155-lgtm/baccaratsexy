@@ -7,6 +7,12 @@ const ROOT = process.cwd();
 const ENV_PATH = path.join(ROOT, ".env");
 const RESULTS_DIR = path.join(ROOT, "results");
 const DEBUG_DIR = path.join(ROOT, "debug");
+const DEFAULT_CONFIG = {
+  LOGIN_URL: "https://www.78win77.plus/login",
+  HEADLESS: "true",
+  POLL_MS: "5000",
+  USER_DATA_DIR: ".browser-profile"
+};
 let latestSnapshot = {
   updatedAt: null,
   tables: [],
@@ -34,10 +40,14 @@ async function loadEnv() {
     for (const [key, value] of Object.entries(local)) {
       process.env[key] = value;
     }
-  } catch {
-    if (!process.env.LOGIN_URL || !process.env.USERNAME || !process.env.PASSWORD) {
-      throw new Error("Missing config. Set LOGIN_URL, USERNAME, PASSWORD in .env or hosting environment variables.");
-    }
+  } catch {}
+
+  for (const [key, value] of Object.entries(DEFAULT_CONFIG)) {
+    if (!process.env[key]) process.env[key] = value;
+  }
+
+  if (!process.env.USERNAME || !process.env.PASSWORD) {
+    throw new Error("Missing USERNAME or PASSWORD. Set them in Railway Variables.");
   }
 }
 
@@ -465,7 +475,17 @@ function escapeHtml(value) {
 async function main() {
   const server = startServer();
   console.log("Starting watcher...");
-  await loadEnv();
+  try {
+    await loadEnv();
+  } catch (error) {
+    latestSnapshot = {
+      ...latestSnapshot,
+      status: "missing_config",
+      error: error.message
+    };
+    console.error(error.message);
+    return;
+  }
   console.log("Loaded .env");
 
   console.log("Launching browser context...");

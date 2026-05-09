@@ -24,12 +24,17 @@ Use Railway, not Netlify, because this app needs a long-running Node process wit
 Set these Railway variables:
 
 ```env
-LOGIN_URL=https://www.78win77.plus/login
 USERNAME=your_username
 PASSWORD=your_password
+```
+
+These are already defaulted in code, so you do not need to set them unless the site changes:
+
+```env
+LOGIN_URL=https://www.78win77.plus/login
 HEADLESS=true
 POLL_MS=5000
 USER_DATA_DIR=.browser-profile
 ```
 
-Do not commit `.env`; it is ignored by git.
+Do not commit `.env`; it is ignored by git. Never push `PASSWORD` to GitHub.
