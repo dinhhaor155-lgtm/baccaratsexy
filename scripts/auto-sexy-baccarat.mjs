@@ -472,6 +472,12 @@ function escapeHtml(value) {
     .replaceAll("'", "&#039;");
 }
 
+function shouldRunHeadless() {
+  const configured = String(process.env.HEADLESS || "true").toLowerCase();
+  if (process.platform !== "win32" && !process.env.DISPLAY) return true;
+  return configured !== "false";
+}
+
 async function main() {
   const server = startServer();
   console.log("Starting watcher...");
@@ -492,8 +498,9 @@ async function main() {
   const context = await chromium.launchPersistentContext(
     path.resolve(ROOT, process.env.USER_DATA_DIR || ".browser-profile"),
     {
-      headless: String(process.env.HEADLESS || "false").toLowerCase() === "true",
-      viewport: { width: 1366, height: 768 }
+      headless: shouldRunHeadless(),
+      viewport: { width: 1366, height: 768 },
+      args: ["--no-sandbox", "--disable-dev-shm-usage"]
     }
   );
 
